@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="description" content="simple whiteboard">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width">
+  <title>A simple whiteboard</title>
+  <style>
+    .control-box {
+      position: fixed;
+      bottom: 30px;
+      right: 30px;
+    }
+
+    button {
+      padding: 20px;
+    }
+</style> 
+</head>
+<body>
+  <canvas id="drawCanvas" width="4000" height="4000"></canvas>
+  <div class="control-box">
+    <button class="drawing-toggle">Turn Off Drawing Mode</button>
+    <button class="save-btn">Save Changes</button>
+  </div>
+  <script>
+    var canvas = document.getElementById('drawCanvas');
+    var ctx = canvas.getContext('2d');
+    
+    var isActive = false;
+    
+    var drawing_enabled = true
+    
+    var drawing_toggle = document.getElementsByClassName('drawing-toggle')[0]
+    var save_button = document.getElementsByClassName('save-btn')[0]
+    
+    var unsaved_paths = []
+    
+    var current_path = []
+    
+    var sync_timeout = 3000
+    
+    canvas.addEventListener('mousedown', startDraw, false);
+    canvas.addEventListener('mousemove', draw, false);
+    canvas.addEventListener('mouseup', endDraw, false);
+    canvas.addEventListener('touchstart', startDraw, false);
+    canvas.addEventListener('touchmove', draw, false);
+    canvas.addEventListener('touchend', endDraw, false);
+    
+    drawing_toggle.addEventListener('click', toggleDrawingMode, false)
+    save_button.addEventListener('click', savePaths, false)
+    
+    function toggleDrawingMode(e) {
+      if (drawing_enabled) {
+        drawing_enabled = false
+        drawing_toggle.innerHTML = "Turn On Drawing Mode"
+      } else {
+        drawing_enabled = true
+        drawing_toggle.innerHTML = "Turn Off Drawing Mode"
+      }
+    }
+    
+    function savePaths(e) {
+      syncPaths(unsaved_paths, function (err, data) {
+        if (err) {
+          console.log(err)
+          return
+        }
+        
+        unsaved_paths = []
+        
+        var paths = JSON.parse(data.context.responseText)
+        paths.forEach(drawPath)
+      })
+    }
+    
+    function draw(e) {
+      if(!isActive) return;
+      
+      if (!drawing_enabled) return;
+      
+      e.preventDefault()
+    
+      // cross-browser/cross-device canvas coordinates
+      var touches = e.changedTouches || {}
+      var x = e.offsetX || e.layerX || touches[0].pageX - canvas.offsetLeft;
+      var y = e.offsetY || e.layerY || touches[0].pageY - canvas.offsetTop;
+      
+      current_path.push([x, y])
+      
+      drawPath(current_path)
+    }
+    
+    function drawPath(path) {
+      if (path.length === 0) { return }
+      
+      ctx.beginPath()
+      
+      ctx.moveTo(path[0][0], path[0][1])
+      
+      path.forEach(function (point) {
+        ctx.lineTo(point[0], point[1])
+      })
+      
+      ctx.stroke();
+    }
+    
+    function startDraw(e) {
+      isActive = true;
+    }
+    	
+    function endDraw(e) {
+      isActive = false;
+      unsaved_paths.push(current_path)
+      current_path = []
+    } 
+    
+    
+    function syncPaths(paths, cb) {
+      var r = new XMLHttpRequest()
+      
+      r.addEventListener('load', function (evt) {
+        //console.log('load event')
+        cb(null, {event: evt, context: this})
+      })
+      
+      r.addEventListener('error', function (evt) {
+        //console.log('error event')
+        cb({event: evt, context: this})
+      })
+      
+      r.open('post', 'https://wt-cae9286562b0f2beac4111f14fbced72-0.run.webtask.io/collaborative-whiteboard', true)
+      
+      r.setRequestHeader('Content-Type', 'application/json')
+      
+      r.send(paths && JSON.stringify(paths))
+    } 
+    
+    function syncLoop () {
+      syncPaths(null, function (err, data) {
+        if (err) {
+          console.log(err)
+          return
+        }
+        
+        var paths = JSON.parse(data.context.responseText)
+        paths.forEach(drawPath)
+      })
+      setTimeout(syncLoop, sync_timeout)
+    }
+    
+    syncLoop()
+  </script>
+</body>
+</html>
